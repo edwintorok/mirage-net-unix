@@ -69,9 +69,10 @@ let () =
 
 open Lwt.Syntax
 
+let cidr = Ipaddr.V4.Prefix.(of_string_exn "192.0.2.200/24")
+let gateway = Ipaddr.V4.Prefix.first cidr
+
 let setup_example_network device =
-  let cidr = Ipaddr.V4.Prefix.(of_string_exn "192.0.2.200/24") in
-  let gateway = Ipaddr.V4.Prefix.first cidr in
   let* t = Netif.connect device in
   (* setup the host side *)
   Tuntap.set_ipv4 ~netmask:cidr device gateway;
@@ -91,7 +92,7 @@ let setup_example_network device =
   in
   let mac = Tuntap.get_macaddr device in
   Logs.info (fun m -> m "new gateway MAC: %a" Macaddr.pp mac);
-  cidr, gateway, t
+  t
 
 let with_connection connect disconnect f =
   let* t = connect () in
@@ -99,9 +100,8 @@ let with_connection connect disconnect f =
 
 let pings_sent = ref 0
 
-let icmp_stress_sender ~src ~dst =
-  let id = Random.int 65536 in
-  id, with_connection Icmpv4_socket.connect Icmpv4_socket.disconnect @@ fun icmp  ->
+let icmp_stress_sender ~id ~src ~dst =
+  with_connection Icmpv4_socket.connect Icmpv4_socket.disconnect @@ fun icmp  ->
   (* preallocate all packets *)
   let packets =
     List.init 65536 @@ fun seq ->
@@ -109,7 +109,7 @@ let icmp_stress_sender ~src ~dst =
       code = 0;
       ty = Echo_request;
       subheader = Id_and_seq (id, seq)
-    } |> Icmpv4_packet.Marshal.make_cstruct ~payload:Cstruct.empty
+    } |> Icmpv4_packet.Marshal.make_cstruct ~payload:Cstruct.(create 24000)
   in
   Logs.info (fun m -> m "icmp_stress_sender: %a -> %a"
     Ipaddr.V4.pp src Ipaddr.V4.pp dst
@@ -167,7 +167,7 @@ let icmp_receiver ~cidr t =
       (* simulate slow packet processing, e.g. log IO *)
       (* simulate having to wait for an event, 
         such as space in an output buffer or a DNS lookup *)
-      let* () = Lwt_unix.sleep 0.001 in
+      let* () = Lwt_unix.sleep 1. in
       Logs.debug (fun m -> m "received ICMP packet from %a" Ipaddr.V4.pp src);
       let+ () = ICMPv4.input icmpv4 ~src ~dst pkt in
       decr handler_pending;
@@ -189,13 +189,20 @@ let icmp_receiver ~cidr t =
 
 let test_flood () =
   let open Lwt.Syntax in
-  let* cidr, gateway, t = setup_example_network "tap4" in
   let dst = Ipaddr.V4.Prefix.address cidr in
-  let id, _icmp_sender = icmp_stress_sender ~src:gateway ~dst in
-  let receiver = icmp_receiver ~cidr t in
-  let* () = icmp_stress_receiver ~id ~src:gateway in
-  Lwt.cancel receiver;
-  Lwt.return_unit
+  let id = Random.int 65536 in
+  let* () = Lwt_io.flush_all () in
+  match Lwt_unix.fork () with
+  | 0 ->
+      (* in child *)
+      icmp_stress_sender ~id ~src:gateway ~dst
+  | child ->
+    let* t = setup_example_network "tap4" in
+    let receiver = icmp_receiver ~cidr t in
+    let* () = icmp_stress_receiver ~id ~src:gateway in
+    Lwt.cancel receiver;
+    Unix.kill child Sys.sigterm;
+    Lwt.return_unit
 
 let suite = [
   "connect", `Quick, (fun () -> run test_open) ;
