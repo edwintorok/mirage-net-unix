@@ -46,4 +46,6 @@ let suite = [
 ]
 
 let _ =
+  Logs.set_level (Some Logs.Info);
+  Logs.set_reporter (Logs_fmt.reporter ());
   Alcotest.run "mirage-net-unix" [ "tests", suite ]
