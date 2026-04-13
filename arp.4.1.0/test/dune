@@ -1,0 +1,4 @@
+(test
+ (name tests)
+ (package arp)
+ (libraries arp macaddr cstruct alcotest))
