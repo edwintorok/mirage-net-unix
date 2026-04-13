@@ -1,6 +1,6 @@
 (executables
  (names test)
- (libraries alcotest mirage-net-unix logs.fmt))
+ (libraries alcotest mirage-net-unix logs.fmt ethernet arp arp.mirage tcpip.icmpv4 tcpip.ipv4 tcpip.icmpv4-socket mirage-crypto-rng.unix))
 
 (alias
  (name runtest)

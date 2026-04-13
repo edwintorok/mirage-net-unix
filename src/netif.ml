@@ -53,7 +53,7 @@ let connect devname =
     Random.self_init ();
     let fd, devname = Tuntap.opentap ~pi:false ~devname () in
     let dev = Lwt_unix.of_unix_file_descr ~blocking:true fd in
-    let mac = Macaddr.make_local (fun _ -> Random.int 256) in
+    let mac = Macaddr.make_local (fun i -> if i = 0 then 0xFE else Random.int 256) in
     Tuntap.set_up_and_running devname;
     let mtu = Tuntap.get_mtu devname in
     Log.debug (fun m -> m "plugging into %s with mac %a and mtu %d"
