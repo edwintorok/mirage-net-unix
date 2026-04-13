@@ -117,7 +117,7 @@ let rec listen t ~header_size fn =
   | true ->
     let buf = Cstruct.create (t.mtu + header_size) in
     let process () =
-      read t buf >|= function
+      Mirage_net.Stats.auto_pause t.stats read t buf >|= function
       | Ok buf              -> Lwt.async (fun () -> fn buf) ; Ok ()
       | Error `Canceled     -> Error `Disconnected
       | Error `Disconnected -> t.active <- false ; Error `Disconnected
