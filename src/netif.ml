@@ -101,7 +101,9 @@ let rec read t buf =
           Lwt.return (Error `Continue))
   in
   process () >>= function
-  | Error `Continue -> read t buf
+  | Error `Continue ->
+      prerr_endline "CONTINUE\n%!";
+      read t buf
   | Error `Canceled -> Lwt.return (Error `Canceled)
   | Error `Disconnected -> Lwt.return (Error `Disconnected)
   | Ok buf -> Lwt.return (Ok buf)
