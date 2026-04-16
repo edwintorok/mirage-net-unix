@@ -105,22 +105,27 @@ let icmp_stress_sender ~id ~src ~dst =
   (* preallocate all packets *)
   let packets =
     List.init 65536 @@ fun seq ->
-    Icmpv4_packet.{
-      code = 0;
-      ty = Echo_request;
-      subheader = Id_and_seq (id, seq)
-    } |> Icmpv4_packet.Marshal.make_cstruct ~payload:Cstruct.(create 24000)
+    let payload = Cstruct.create 24000 in
+    let header =
+      Icmpv4_packet.{
+        code = 0;
+        ty = Echo_request;
+        subheader = Id_and_seq (id, seq)
+      } |> Icmpv4_packet.Marshal.make_cstruct ~payload
+    in
+    Cstruct.append header payload
   in
   Logs.info (fun m -> m "icmp_stress_sender: %a -> %a"
     Ipaddr.V4.pp src Ipaddr.V4.pp dst
   );
+  let write = Icmpv4_socket.write icmp ~src ~dst in
   let send packet =
-    let+ outcome = Icmpv4_socket.write icmp ~src ~dst packet in
+    let+ outcome = write packet in
     Logs.on_error ~pp:Icmpv4_socket.pp_error ~use:(fun _ -> Alcotest.fail "cannot send ping") outcome;
     incr pings_sent
   in
   let rec loop () =
-    let* () = packets |> Lwt_list.iter_s send in
+    let* () = packets |> Lwt_list.iter_p send in
     (loop[@tailcall]) ()
   in
   loop ()
@@ -194,7 +199,6 @@ let test_flood () =
   let* () = Lwt_io.flush_all () in
   match Lwt_unix.fork () with
   | 0 ->
-      (* in child *)
       icmp_stress_sender ~id ~src:gateway ~dst
   | child ->
     let* t = setup_example_network "tap4" in
